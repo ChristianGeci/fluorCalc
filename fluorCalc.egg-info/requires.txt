@@ -1,0 +1,4 @@
+mcint
+numpy
+scipy
+matplotlib

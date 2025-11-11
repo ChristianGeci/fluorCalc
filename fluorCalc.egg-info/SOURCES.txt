@@ -1,0 +1,10 @@
+LICENSE
+README.md
+setup.py
+fluorCalc/__init__.py
+fluorCalc/core.py
+fluorCalc.egg-info/PKG-INFO
+fluorCalc.egg-info/SOURCES.txt
+fluorCalc.egg-info/dependency_links.txt
+fluorCalc.egg-info/requires.txt
+fluorCalc.egg-info/top_level.txt
