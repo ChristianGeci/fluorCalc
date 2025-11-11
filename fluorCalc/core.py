@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
 import mcint
 import random
 import xraydb
@@ -22,48 +21,77 @@ class experiment:
                 nmc = 50000,
                 suppress_output = False,
                 detector_above_sample = False):
-        #we define here coordinates for the sample
-        self.x_s = np.array([1, 0, 0]) # x is a unit vector on the sample's surface that defines the dimension of illuminated area which shrinks or elongates as the beam's angle of incidence is varied
-        self.y_s = np.array([0, 1, 0]) # y is the direction normal to the sample surface
-        self.z_s = np.array([0, 0, 1]) # z is a unit vector on the sample's surface that defines the dimension of illuminated area which does not change as the beam's angle of incidence is varied
+        """
+        *Keyword arguments:
+            placeholder
+        """
+        
+        def define_sample_coordinates():
+            """
+            *Summary:
+                Define the unit vectors x_s, y_s, and z_s, which form
+                the basis of the sample coordinate scheme (in mm).
+            *Explanation:
+                y_s is normal to the sample surface.
+                z_s is parallel to the sample's axis of rotation.
+                x_s is the direction along the sample surface that the
+                illuminated region "stretches" along as the sample is rotated.
+            """
+            self.x_s = np.array([1, 0, 0])
+            self.y_s = np.array([0, 1, 0])
+            self.z_s = np.array([0, 0, 1])
+        define_sample_coordinates()
 
-        self.suppress_output = suppress_output
+        def process_inputs():
+            """Write constructor arguments to object."""
+            self.suppress_output = suppress_output
+            self.theta = theta*np.pi/180
+            self.R = R
+            self.d = 2*self.R
+            self.detector_distance = detector_distance
+            self.beam_width = beam_width
+            self.beam_height = beam_height
+            self.detector_above_sample = detector_above_sample
+            self.quantum_yield = quantum_yield
+            self.photon_flow = photon_flow
+        process_inputs()
+        
+        def calculate_illuminated_area():
+            """
+            *Summary:
+                Find the dimensions (in mm) of the sample illuminated by the beam.
+                Also calculate the photon flux.
+            *Explanation:
+                The "beam height" is taken as the vertical dimension of the
+                beam from the perspective of the user. If the detector is
+                mounted in the plane of the ring (as is typical), then z_s
+                is the vertical axis from the user's point of view and the
+                length of the illuminated area along the z_s direction
+                (z_illum) is determined by the height of the beam. Otherwise,
+                z_illum is determined by the width of the beam.
+            """
+            if (not detector_above_sample):
+                self.z_illum = beam_height
+                self.x_illum = beam_width/np.sin(self.theta)
+            else:
+                self.z_illum = beam_width
+                self.x_illum = beam_height/np.sin(self.theta)
+            self.photon_flux = self.photon_flow/self.z_illum/self.x_illum
+        calculate_illuminated_area()
+        
+        def calculate_detector_position():
+            """
+            Get the position of the detector <x_d, y_d, z_d> in the
+            sample coordinate scheme.
+            """
+            self.x_d = np.sin(self.theta)*detector_distance+self.x_illum/2
+            self.y_d = np.cos(self.theta)*detector_distance
+            self.z_d = self.z_illum/2
+            self.detector_position = np.array([self.x_d, self.y_d, self.z_d])
 
-        self.theta = theta*np.pi/180
-
-        self.R = R
-        self.d = 2*self.R
-        self.detector_distance = detector_distance
-
-        self.beam_width = beam_width
-        self.beam_height = beam_height
-        self.detector_above_sample = detector_above_sample
-        #if the detector is situated above or below the sample (i.e. towards the ceiling or floor) then the beam's height will be spread out as theta changes
-        if (detector_above_sample):
-            self.z_illum = beam_width #in mm
-            self.x_illum = beam_height/np.sin(self.theta) #in mm
-        #if the detector is mounted in the same horizontal plane as the sample (as is typical), then the beam's width will be spread out as theta changes
-        else:
-            self.z_illum = beam_height #in mm
-            self.x_illum = beam_width/np.sin(self.theta) #in mm
-
-
-        self.photon_flow = photon_flow #photons/second
-        self.photon_flux = self.photon_flow/self.z_illum/self.x_illum #photons/s/mm^2
-
-        self.quantum_yield = quantum_yield
-
-
-        #DETECTOR POSITION (in sample coordinates) CHANGES AS YOU CHANGE THETA (if the detector is fixed in labratory coordinates)
-        self.x_d = np.sin(self.theta)*detector_distance+self.x_illum/2 #mm
-        self.y_d = np.cos(self.theta)*detector_distance #mm
-        self.z_d = self.z_illum/2 #mm
-
-        #check to make sure the detector is not clipping into the sample
-        if self.y_d - np.sin(self.theta)*self.R <= 0:
-            raise ValueError('Detector clips into sample slab!')
-
-        self.p_d = np.array([self.x_d, self.y_d, self.z_d])
+            if self.y_d - np.sin(self.theta)*self.R <= 0:
+                raise ValueError('Detector clips into sample slab!')
+        calculate_detector_position()
 
         #angle at which detector is tilted
         #from a beamline user's point of view, the detector and beam are static, and the sample's position and orientation are adjusted.
@@ -136,7 +164,7 @@ class experiment:
         return np.array([r*np.cos(phi), r*np.sin(phi), 0])
 
     def detector_coordinates_to_sample_coordinates(self, r, phi):
-        return np.matmul(self.M, self.polar_to_cartesian(r, phi))+self.p_d
+        return np.matmul(self.M, self.polar_to_cartesian(r, phi))+self.detector_position
 
 
     def dist(self, x, y, z, r, phi): #computes the distance between a point x,y,z, in the sample and r,phi on the detector
@@ -251,33 +279,31 @@ class mu_package:
 
     def get_attenuation_coefficients(self):
 
-        def get_incoming_bulk_attenuation(self):
+        def get_incoming_bulk_attenuation():
             result = 0
             for element, fraction in self.bulk_composition.items():
                 result += xraydb.mu_elam(element, self.edge.energy) * self.density * fraction
             return result / 10    # factor of 10 converts from 1/cm to 1/mm
 
-        def get_outgoing_bulk_attenuation(self):
+        def get_outgoing_bulk_attenuation():
             result = 0
             for element, fraction in self.composition.items():
                 result += xraydb.mu_elam(element, self.detected_photon_energy) * self.density * fraction
             return result / 10    # factor of 10 converts from 1/cm to 1/mm
         
-        def get_absorbing_atom_attenuation(self):
+        def get_absorbing_atom_attenuation():
             result = xraydb.mu_elam(self.absorbing_element, self.edge.energy) * self.density * self.composition[self.absorbing_element] / 10    # factor of 10 converts from 1/cm to 1/mm
             return result
 
-        self.mu_T_E = get_incoming_bulk_attenuation(self)
-        self.mu_T_Ef = get_outgoing_bulk_attenuation(self)
-        self.mu_i = get_absorbing_atom_attenuation(self)
+        self.mu_T_E = get_incoming_bulk_attenuation()
+        self.mu_T_Ef = get_outgoing_bulk_attenuation()
+        self.mu_i = get_absorbing_atom_attenuation()
 
 
             
     @property
     def bulk_composition(self):
-        '''
-        Composition dictionary with the absorbing element removed
-        '''
+        """Return the composition dictionary with the absorbing element removed."""
         return {item: self.composition[item] for item in self.composition if item != self.absorbing_element}
 
 
@@ -290,5 +316,6 @@ def test_function():
 
     my_mu = mu_package(my_composition, 6.47/2, "P K", 2300)
 
+    default_experiment = experiment(nmc = 1000)
 
 test_function()
