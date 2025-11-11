@@ -234,9 +234,14 @@ class angle_sweep:
         return max_angle, max_flux
 
 class mu_package:
-    def __init__(self, composition: dict[str, float], density: float, incident_photon_energy: float, detected_photon_energy: float):
+    def __init__(self, composition: dict[str, float], density: float, edge: str, detected_photon_energy: float):
         self.composition = composition
+        self.density = density
+        self.absorbing_element = edge.split()[0]
+        self.edge = xraydb.xray_edge(self.absorbing_element, edge.split()[1])
+        self.detected_photon_energy = detected_photon_energy
         self.normalize_composition()
+        self.get_attenuation_coefficients()
         pass
 
     def normalize_composition(self):
@@ -244,15 +249,46 @@ class mu_package:
         for element in self.composition:
             self.composition[element] /= stoichimetry_sum
 
+    def get_attenuation_coefficients(self):
+
+        def get_incoming_bulk_attenuation(self):
+            result = 0
+            for element, fraction in self.bulk_composition.items():
+                result += xraydb.mu_elam(element, self.edge.energy) * self.density * fraction
+            return result / 10    # factor of 10 converts from 1/cm to 1/mm
+
+        def get_outgoing_bulk_attenuation(self):
+            result = 0
+            for element, fraction in self.composition.items():
+                result += xraydb.mu_elam(element, self.detected_photon_energy) * self.density * fraction
+            return result / 10    # factor of 10 converts from 1/cm to 1/mm
+        
+        def get_absorbing_atom_attenuation(self):
+            result = xraydb.mu_elam(self.absorbing_element, self.edge.energy) * self.density * self.composition[self.absorbing_element] / 10    # factor of 10 converts from 1/cm to 1/mm
+            return result
+
+        self.mu_T_E = get_incoming_bulk_attenuation(self)
+        self.mu_T_Ef = get_outgoing_bulk_attenuation(self)
+        self.mu_i = get_absorbing_atom_attenuation(self)
+
+
+            
+    @property
+    def bulk_composition(self):
+        '''
+        Composition dictionary with the absorbing element removed
+        '''
+        return {item: self.composition[item] for item in self.composition if item != self.absorbing_element}
 
 
 def test_function():
     my_composition = {
-        'Na': 1,
-        'Cl': 2,
+        'Mo': 1,
+        'O': 2,
+        'P': 0.001,
     }
 
-    my_mu = mu_package(my_composition, 0, 0, 0)
+    my_mu = mu_package(my_composition, 6.47/2, "P K", 2300)
 
-    print(my_mu.composition)
+
 test_function()
