@@ -54,6 +54,9 @@ class experiment:
             self.detector_above_sample = detector_above_sample
             self.quantum_yield = quantum_yield
             self.photon_flow = photon_flow
+            self.mu_T_Ef = mu_T_Ef
+            self.mu_T_E = mu_T_E
+            self.mu_i = mu_i
         process_inputs()
         
         def calculate_illuminated_area():
@@ -81,49 +84,53 @@ class experiment:
         
         def calculate_detector_position():
             """
-            Get the position of the detector <x_d, y_d, z_d> in the
+            Get the position of the detector <x, y, z> in the
             sample coordinate scheme.
             """
-            self.x_d = np.sin(self.theta)*detector_distance+self.x_illum/2
-            self.y_d = np.cos(self.theta)*detector_distance
-            self.z_d = self.z_illum/2
-            self.detector_position = np.array([self.x_d, self.y_d, self.z_d])
+            x = np.sin(self.theta)*detector_distance+self.x_illum/2
+            y = np.cos(self.theta)*detector_distance
+            z = self.z_illum/2
+            self.detector_position = np.array([x, y, z])
 
-            if self.y_d - np.sin(self.theta)*self.R <= 0:
+            if y - np.sin(self.theta)*self.R <= 0:
                 raise ValueError('Detector clips into sample slab!')
         calculate_detector_position()
 
-        #angle at which detector is tilted
-        #from a beamline user's point of view, the detector and beam are static, and the sample's position and orientation are adjusted.
-        #in our calculations, we consider the sample as being static and the beam/detector as being adjusted.
-        #the detector should typically be 90° from the beam. Since our picture is of a static sample and a moving beam, the detector's position and orientation must also change if the beam's angle of incidence changes
-
-        self.beta = 3*np.pi/2 - self.theta
-        self.alpha = -np.pi/2
-
-        #alpha and beta define a unit vector z_2 perpendicular to the surface of the detector, such that
-        self.z_2 = np.array([np.sin(self.alpha)*np.cos(self.beta), np.sin(self.alpha)*np.sin(self.beta), np.cos(self.alpha)])
-
-        #basically, we're looking at the two angular components of a spherical coordinate system - if the xy plane is the ground and the z direction is up, alpha is the zenith angle and beta is the azimuthal angle
-
-        #we can use cross products to define the two other coordinate axes which are guaranteed to be in the plane of the detector
-        self.x_2 = np.cross(self.y_s, self.z_2)/np.linalg.norm(np.cross(self.y_s, self.z_2))
-        self.y_2 = np.cross(self.z_2, self.x_2)/np.linalg.norm(np.cross(self.z_2, self.x_2))
-
-        #our matrix that can convert points from detector coordinates into sample coordinates is thus
-        self.M = np.array([self.x_2, self.y_2, self.z_2]).T
-
-        #and our matrix that converts from regular coordinates into detector coordinates is this
-        self.W = np.linalg.inv(self.M)
-
-        #attenuation of fluoresced photons through the bulk material
-        self.mu_T_Ef = mu_T_Ef #reciprocal millimeters
-
-        #attenuation of incoming photons through the bulk material
-        self.mu_T_E = mu_T_E #reciprocal millimeters
-
-        #absorption coefficient of the absorbing atom of interest
-        self.mu_i = mu_i #reciprocal millimeters
+        def calculate_detector_orientation():
+            """
+            Get alpha and beta, angles which specify the orientation of 
+            a unit vector normal to the detector surface in a polar
+            coordinate scheme.
+            """
+            # It's hard-coded that the detector is at a 90 degree angle
+            # with respect to the beam.
+            self.beta = 3*np.pi/2 - self.theta
+            self.alpha = -np.pi/2
+        calculate_detector_orientation()
+        
+        def define_detector_coordinate_system():
+            """Define a new orthonormal set of basis vectors
+            x_d, y_d, z_d, where z_d is taken as the direction
+            normal to the detector surface. These specify
+            "detector coordinates"."""
+            self.z_d = np.array([np.sin(self.alpha)*np.cos(self.beta), 
+                                 np.sin(self.alpha)*np.sin(self.beta), 
+                                 np.cos(self.alpha)])
+            self.x_d = np.cross(self.y_s, self.z_d)
+            self.x_d /= np.linalg.norm(self.x_d)
+            self.y_d = np.cross(self.z_d, self.x_d)
+            self.y_d /= np.linalg.norm(self.y_d)
+        define_detector_coordinate_system()
+        
+        def calculate_transformation_matrices():
+            """
+            Calculate a matrix M that converts from detector coorinates
+            to sample coordinates and a matrix W that converts from
+            sample coordinates to detector coordinates.
+            """
+            self.M = np.array([self.x_d, self.y_d, self.z_d]).T
+            self.W = np.linalg.inv(self.M)
+        calculate_transformation_matrices()
 
         self.consts = self.photon_flux*self.quantum_yield*self.mu_i/4/np.pi/np.sin(self.theta)
 
@@ -207,7 +214,7 @@ class experiment:
 
     def cosine_term(self, x, y, z, r, phi):
         path_vector = self.path(x, y, z, r, phi)
-        return np.absolute(np.dot(path_vector, self.z_2)/np.linalg.norm(path_vector))
+        return np.absolute(np.dot(path_vector, self.z_d)/np.linalg.norm(path_vector))
 
 class angle_sweep:
     def __init__(self, min_angle, max_angle, step_size, template_experiment, nmc = 0):
