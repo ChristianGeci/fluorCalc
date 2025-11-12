@@ -10,16 +10,13 @@ class experiment:
     and expected fluorescence count rate for that configuration.
     """
     def __init__(self,
-                theta = 6,
+                composition: dict[str, float], density: float, 
+                element: str, edge: str, emission_line: str,
+                theta = 45,
                 R = np.sqrt(170/4/np.pi),
-                beam_width = 3,
-                beam_height = 1,
+                beam_width = 3, beam_height = 1,
                 photon_flow = 7.7E9,
-                quantum_yield = 0.08,
                 detector_distance = 10,
-                mu_T_Ef = 222.222,
-                mu_T_E = 185.1852,
-                mu_i = 2.8662,
                 nmc = 50000,
                 suppress_output = False,
                 detector_above_sample = False):
@@ -43,6 +40,74 @@ class experiment:
             detector_above_sample -- specify whether the detector is in the plane of the ring (false) or is mounted above the sample (true)
         """
         
+        def process_inputs():
+            """Write constructor arguments to object."""
+            self.composition = composition
+            self.density = density
+            self.absorbing_element = element
+            self.edge = edge
+            self.emission_line = emission_line
+            self.suppress_output = suppress_output
+            self.theta = theta*np.pi/180
+            self.R = R
+            self.d = 2*self.R
+            self.detector_distance = detector_distance
+            self.beam_width = beam_width
+            self.beam_height = beam_height
+            self.detector_above_sample = detector_above_sample
+            self.photon_flow = photon_flow
+            self.nmc = nmc
+        process_inputs()
+
+        def get_xraydb_data():
+
+            def get_photon_energies_and_quantum_yield():
+                xraydb_edge = xraydb.xray_edge(self.absorbing_element, edge)
+                self.incident_photon_energy = xraydb_edge.energy
+                xraydb_fluor_yield = xraydb.fluor_yield(element, edge, emission_line, self.incident_photon_energy)
+                total_quantum_yield, self.detected_photon_energy, measured_fraction = xraydb_fluor_yield
+                self.quantum_yield = total_quantum_yield * measured_fraction
+            get_photon_energies_and_quantum_yield()
+
+            def normalize_composition():
+                stoichimetry_sum = sum(self.composition.values())
+                for element in self.composition:
+                    self.composition[element] /= stoichimetry_sum
+            normalize_composition()
+
+            def get_attenuation_coefficients():
+
+                def get_incoming_bulk_attenuation():
+                    result = 0
+                    for element, fraction in self.composition.items():
+                        result += (xraydb.mu_elam(element, self.incident_photon_energy)
+                                    * self.density * fraction
+                                    / 10) # factor of 10 converts from 1/cm to 1/mm
+                    return result    
+
+                def get_outgoing_bulk_attenuation():
+                    result = 0
+                    for element, fraction in self.composition.items():
+                        result += (xraydb.mu_elam(element, self.detected_photon_energy)
+                                    * self.density * fraction
+                                    / 10) # factor of 10 converts from 1/cm to 1/mm
+                    return result
+                
+                def get_absorbing_atom_attenuation():
+                    absorbing_element_fraction = self.composition[self.absorbing_element]
+                    result = (xraydb.mu_elam(self.absorbing_element, self.incident_photon_energy)
+                            * self.density * absorbing_element_fraction
+                            / 10)    # factor of 10 converts from 1/cm to 1/mm
+                    return result
+
+                self.mu_T_E = get_incoming_bulk_attenuation()
+                self.mu_T_Ef = get_outgoing_bulk_attenuation()
+                self.mu_i = get_absorbing_atom_attenuation()
+            get_attenuation_coefficients()
+
+        get_xraydb_data()
+
+
         def define_sample_coordinates():
             """
             *Summary:
@@ -59,24 +124,6 @@ class experiment:
             self.z_s = np.array([0, 0, 1])
         define_sample_coordinates()
 
-        def process_inputs():
-            """Write constructor arguments to object."""
-            self.suppress_output = suppress_output
-            self.theta = theta*np.pi/180
-            self.R = R
-            self.d = 2*self.R
-            self.detector_distance = detector_distance
-            self.beam_width = beam_width
-            self.beam_height = beam_height
-            self.detector_above_sample = detector_above_sample
-            self.quantum_yield = quantum_yield
-            self.photon_flow = photon_flow
-            self.mu_T_Ef = mu_T_Ef
-            self.mu_T_E = mu_T_E
-            self.mu_i = mu_i
-            self.nmc = nmc
-        process_inputs()
-        
         def calculate_illuminated_area():
             """
             *Summary:
@@ -346,69 +393,6 @@ class angle_sweep:
 
         return max_angle, max_flux
 
-class mu_package:
-    def __init__(self, composition: dict[str, float], density: float, 
-                 element: str, edge: str, emission_line: str):
-
-        def process_inputs():
-            self.composition = composition
-            self.density = density
-            self.absorbing_element = element
-            self.edge = edge
-            self.emission_line = emission_line
-        process_inputs()
-        
-        def get_photon_energies_and_quantum_yield():
-            xraydb_edge = xraydb.xray_edge(self.absorbing_element, edge)
-            self.incident_photon_energy = xraydb_edge.energy
-            xraydb_fluor_yield = xraydb.fluor_yield(element, edge, emission_line, self.incident_photon_energy)
-            total_quantum_yield, self.detected_photon_energy, measured_fraction = xraydb_fluor_yield
-            self.quantum_yield = total_quantum_yield * measured_fraction
-        get_photon_energies_and_quantum_yield()
-
-        def normalize_composition():
-            stoichimetry_sum = sum(self.composition.values())
-            for element in self.composition:
-                self.composition[element] /= stoichimetry_sum
-        normalize_composition()
-
-        def get_attenuation_coefficients():
-            
-            def get_incoming_bulk_attenuation():
-                result = 0
-                for element, fraction in self.composition.items():
-                    result += (xraydb.mu_elam(element, self.incident_photon_energy)
-                                * self.density * fraction
-                                / 10) # factor of 10 converts from 1/cm to 1/mm
-                return result    
-
-            def get_outgoing_bulk_attenuation():
-                result = 0
-                for element, fraction in self.composition.items():
-                    result += (xraydb.mu_elam(element, self.detected_photon_energy)
-                                * self.density * fraction
-                                / 10) # factor of 10 converts from 1/cm to 1/mm
-                return result
-            
-            def get_absorbing_atom_attenuation():
-                absorbing_element_fraction = self.composition[self.absorbing_element]
-                result = (xraydb.mu_elam(self.absorbing_element, self.incident_photon_energy)
-                        * self.density * absorbing_element_fraction
-                        / 10)    # factor of 10 converts from 1/cm to 1/mm
-                return result
-
-            self.mu_T_E = get_incoming_bulk_attenuation()
-            self.mu_T_Ef = get_outgoing_bulk_attenuation()
-            self.mu_i = get_absorbing_atom_attenuation()
-        get_attenuation_coefficients()
-
-
-
-
-
-
-            
-    
 
 
 def test_function():
@@ -418,8 +402,6 @@ def test_function():
         'P': 0.001,
     }
 
-    my_mu = mu_package(my_composition, 6.47/2, "P", "K",'Ka')
-
-    #default_experiment = experiment(nmc = 1000)
+    default_experiment = experiment(my_composition, 6.47/2, "P", "K",'Ka', nmc = 1000)
 
 test_function()
