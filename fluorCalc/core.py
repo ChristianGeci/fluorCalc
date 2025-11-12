@@ -366,18 +366,16 @@ class angle_sweep:
 
         for angle in self.angles:
             self.experiments.append(experiment(
+                template_experiment.composition, template_experiment.density, 
+                template_experiment.absorbing_element, template_experiment.edge, template_experiment.emission_line,
                 R = template_experiment.R,
-                beam_width = template_experiment.beam_width,
-                beam_height = template_experiment.beam_height,
+                beam_width = template_experiment.beam_width, beam_height = template_experiment.beam_height,
                 photon_flow = template_experiment.photon_flow,
-                quantum_yield = template_experiment.quantum_yield,
                 detector_distance = template_experiment.detector_distance,
-                mu_T_Ef = template_experiment.mu_T_Ef,
-                mu_T_E = template_experiment.mu_T_E,
-                mu_i = template_experiment.mu_i,
+                detector_above_sample = template_experiment.detector_above_sample,
+
                 nmc = Nmc,
                 suppress_output = True,
-                detector_above_sample = template_experiment.detector_above_sample,
                 theta = angle))
 
     def plot_result(self, plot_simple_calculation_result = True, label = "", title = ""):
