@@ -12,8 +12,6 @@ class experiment:
                 beam_height = 1,
                 photon_flow = 7.7E9,
                 quantum_yield = 0.08,
-                #alpha = np.pi/2,
-                #beta = np.pi/2,
                 detector_distance = 10,
                 mu_T_Ef = 222.222,
                 mu_T_E = 185.1852,
@@ -23,7 +21,7 @@ class experiment:
                 detector_above_sample = False):
         """
         *Keyword arguments:
-            placeholder
+            Theta -- 
         """
         
         def define_sample_coordinates():
@@ -57,6 +55,7 @@ class experiment:
             self.mu_T_Ef = mu_T_Ef
             self.mu_T_E = mu_T_E
             self.mu_i = mu_i
+            self.nmc = nmc
         process_inputs()
         
         def calculate_illuminated_area():
@@ -81,6 +80,18 @@ class experiment:
                 self.x_illum = beam_height/np.sin(self.theta)
             self.photon_flux = self.photon_flow/self.z_illum/self.x_illum
         calculate_illuminated_area()
+
+        def lump_constants():
+            """
+            Lump together a bunch of constants that will just end
+            up coming out in front of the integral.
+            """
+            self.consts = (self.photon_flux
+                           * self.quantum_yield
+                           * self.mu_i
+                           / (4 * np.pi)
+                           / np.sin(self.theta))
+        lump_constants()
         
         def calculate_detector_position():
             """
@@ -132,87 +143,135 @@ class experiment:
             self.W = np.linalg.inv(self.M)
         calculate_transformation_matrices()
 
-        self.consts = self.photon_flux*self.quantum_yield*self.mu_i/4/np.pi/np.sin(self.theta)
+        def find_y_depth_limit():
+            """
+            Calculate how deeply into the sample slab we will integrate
+            by finding at what point the beam intensity has dropped below
+            1%.
+            """
+            depth = 0
+            while True:
+                if (self.in_atten(depth) < 0.01):
+                    self.y_depth_limit = depth
+                    break
+                depth -= 1E-5
+        find_y_depth_limit()
 
-        self.y_depth_limit = self.find_y_depth_limit()
+        def compute_full_integral_count_rate():
+            """
+            Compute the fluorescence count rate within our integral
+            formalism.
+            """
+            def integrand(S):
+                """
+                Integrand of the Monte Carlo integral, return a photon count
+                rate per unit volume per unit area of phase space.
+                """
+                x = S[0]
+                y = S[1]
+                z = S[2]
+                r = S[3]
+                phi = S[4]
+                return (self.consts * r
+                        * self.cosine_term(x, y, z, r, phi)
+                        / (self.dist(x, y, z, r, phi)**2)
+                        * self.out_atten(x,y,z,r,phi)
+                        * self.in_atten(y))
+            def sampler():
+                """Sample phase space for the Monte Carlo integration."""    
+                while True:
+                    z = random.uniform(0, self.z_illum)
+                    y = random.uniform(self.y_depth_limit, 0)
+                    x = random.uniform(-y/np.tan(self.theta), -y/np.tan(self.theta) + self.x_illum)
+                    r = random.uniform(0, self.R)
+                    phi = random.uniform(0, 2*np.pi)
+                    yield (x, y, z, r, phi)
+            random.seed(1)
+            domainsize = -self.z_illum*self.x_illum*self.y_depth_limit*self.R*2*np.pi
+            self.result, self.error = mcint.integrate(integrand, sampler(), measure = domainsize, n=self.nmc)
+        compute_full_integral_count_rate()
 
-        self.domainsize = -self.z_illum*self.x_illum*self.y_depth_limit*self.R*2*np.pi
-        self.nmc = nmc
+        def compute_simple_count_rate():
+            """
+            Compute the count rate according to the approximate description
+            given in Bunker.
+            """
+            f = self.mu_T_E/np.sin(self.theta) + self.mu_T_Ef/np.sin(np.pi/2 - self.theta)
+            apex_angle = np.arctan(self.R/self.detector_distance)
+            self.solid_angle = 4*np.pi*np.sin(apex_angle/2)**2
 
-        self.compute_count_rate()
+            g = self.quantum_yield*self.solid_angle/4/np.pi/f
+            self.crude_result = g*self.mu_i*self.photon_flow/np.sin(self.theta)
+        compute_simple_count_rate()
 
-        self.quick_and_dirty_count_rate()
-
-    def compute_count_rate(self):
-        random.seed(1)
-        self.result, self.error = mcint.integrate(self.integrand, self.sampler(), measure = self.domainsize, n=self.nmc)
-
-        if (not self.suppress_output):
+        def print_output():
             print(f"expected count rate: {self.result:.3e} photons per second")
             print("Using n = ", self.nmc)
             print(f"estimated error = {self.error:.2e} = {self.error/self.result*100:.3}%")
-
-    def quick_and_dirty_count_rate(self):
-        f = self.mu_T_E/np.sin(self.theta) + self.mu_T_Ef/np.sin(np.pi/2 - self.theta)
-        #solid_angle = np.pi*self.R**2/(self.detector_distance**2) #estimation of solid angle
-        #apex_angle = np.arcsin(self.R/self.detector_distance)
-        apex_angle = np.arctan(self.R/self.detector_distance)
-        solid_angle = 4*np.pi*np.sin(apex_angle/2)**2
-
-        g = self.quantum_yield*solid_angle/4/np.pi/f
-        self.crude_result = g*self.mu_i*self.photon_flow/np.sin(self.theta)
-
-        if (not self.suppress_output):
-            print(f"solid angle fraction: {solid_angle/np.pi*4:.4f}")
+            print(f"solid angle fraction: {self.solid_angle/np.pi*4:.4f}")
             print(f"crude count rate: {self.crude_result:.3e} photons per second, difference of {np.absolute(100*(self.crude_result - self.result)/self.result):.2f}%")
-
+        if not self.suppress_output:
+            print_output()
 
     def polar_to_cartesian(self, r, phi):
+        """
+        Converts a vector in 2D polar coordinates into 2D Cartesian
+        coordinates.
+        """
         return np.array([r*np.cos(phi), r*np.sin(phi), 0])
 
     def detector_coordinates_to_sample_coordinates(self, r, phi):
+        """
+        Accepts polar coordinates on the detector surface (r, phi)
+        and converts them to detector coordinates.
+        """
         return np.matmul(self.M, self.polar_to_cartesian(r, phi))+self.detector_position
 
+    def dist(self, x, y, z, r, phi): #
+        """
+        Return the distance between a point (x, y, z) 
+        in the sample and (r, phi) on the detector.
+        """
+        return np.linalg.norm(self.path(x, y, z, r, phi))
 
-    def dist(self, x, y, z, r, phi): #computes the distance between a point x,y,z, in the sample and r,phi on the detector
-        return np.linalg.norm(np.array([x, y, z]) - self.detector_coordinates_to_sample_coordinates(r, phi))
-
-    def o_atten(self, x, y, z, r, phi):
-        return np.exp(y/(self.detector_coordinates_to_sample_coordinates(r, phi)[1]-y)*self.dist(x, y, z, r, phi)*self.mu_T_Ef)
+    def out_atten(self, x, y, z, r, phi):
+        """
+        * Summary:
+            Calculates the attenuation experienced by a fluoresced photon
+            as it traverses the sample to the detector.
+        * Explanation:
+            Accepts a point in phase space, represented by the absorption
+            site in the sample slab (x, y, z; sample coordinates) and
+            the point on the detector where the fluoresced photon is absorbed
+            (r, phi; polar coordinates on the surface of the detector).
+        """
+        distance_thru_sample = (y * self.dist(x, y, z, r, phi)
+                                / (self.detector_coordinates_to_sample_coordinates(r, phi)[1]-y))
+        return np.exp(distance_thru_sample*self.mu_T_Ef)
 
     def in_atten(self, y):
+        """
+        Calculate attenuation experienced by a photon absorbed at
+        a given point in phase space (depends only upon depth
+        into the sample, measured in the sample coordinate system).
+        """
         return np.exp(y/np.sin(self.theta)*self.mu_T_E)
 
-    #function that finds the bound of integration for y by looking at the depth at which the beam's intensity attenuates below 1% of I_0
-    def find_y_depth_limit(self):
-        for depth in np.arange(0, -100, -0.01/1000):
-            if (self.in_atten(depth) < 0.01):
-                return depth
-
-
-    def integrand(self, S):
-        x = S[0]
-        y = S[1]
-        z = S[2]
-        r = S[3]
-        phi = S[4]
-        return self.cosine_term(x, y, z, r, phi)*r/(self.dist(x, y, z, r, phi)**2)*self.o_atten(x,y,z,r,phi)*self.in_atten(y)*self.consts
-
-    def sampler(self):
-        while True:
-            z = random.uniform(0, self.z_illum)
-            y = random.uniform(self.y_depth_limit, 0)
-            x = random.uniform(-y/np.tan(self.theta), -y/np.tan(self.theta) + self.x_illum)
-            r = random.uniform(0, self.R)
-            phi = random.uniform(0, 2*np.pi)
-            yield (x, y, z, r, phi)
-
-    #returns a vector in sample coordinates that points from a gives point in the bulk sample to a given point on the detector
     def path(self, x, y, z, r, phi):
+        """
+        Returns a vector in sample coordinates that points from a given 
+        point in the bulk sample (x, y, z) to a given point on the 
+        detector (r, phi).
+        """
+        sample_point = np.array([x, y, z])
         detector_point = self.detector_coordinates_to_sample_coordinates(r, phi)
-        return np.array([detector_point[0] - x, detector_point[1] - y, detector_point[2] -z])
+        return detector_point - sample_point
 
     def cosine_term(self, x, y, z, r, phi):
+        """
+        Return the diminution in flux that occurs to off-normal
+        incidence.
+        """
         path_vector = self.path(x, y, z, r, phi)
         return np.absolute(np.dot(path_vector, self.z_d)/np.linalg.norm(path_vector))
 
