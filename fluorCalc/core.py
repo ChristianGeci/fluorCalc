@@ -408,16 +408,3 @@ class angle_sweep:
             print(f"maximum flux of {max_flux:.3e} at angle {max_angle}")
 
         return max_angle, max_flux
-
-
-
-def test_function():
-    my_composition = {
-        'Mo': 1,
-        'O': 2,
-        'P': 0.001,
-    }
-
-    default_experiment = experiment(my_composition, 6.47/2, "P", "K",'Ka', nmc = 1000)
-
-test_function()
