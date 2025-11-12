@@ -5,6 +5,10 @@ import random
 import xraydb
 
 class experiment:
+    """
+    Encapsulates an XAFS experimental configuration and calculates
+    and expected fluorescence count rate for that configuration.
+    """
     def __init__(self,
                 theta = 6,
                 R = np.sqrt(170/4/np.pi),
@@ -20,8 +24,23 @@ class experiment:
                 suppress_output = False,
                 detector_above_sample = False):
         """
+        *Summary:
+            Parses inputs related to experimental configuration and
+            calculates expected x-ray fluorescence count rate.
         *Keyword arguments:
-            Theta -- 
+            theta -- angle (degrees) of incidence between the beam and sample
+            R -- radius (mm) of detector
+            beam_width -- width (mm) of x-ray beam 
+            beam_height -- height (mm) of x-ray beam
+            photon_flow -- intensity (photons per second) of x-ray beam
+            quantum yield -- fluorescence yield of absorbing atom (dimensionless)
+            detector_distance -- distance (mm) from the center of the detector to the center of the sample
+            mu_T_Ef -- attenuation coefficient (1/mm) of fluoresced photons traversing the sample
+            mu_T_E -- attenuation coefficient (1/mm) of incident photons traversing the sample
+            mu_i -- absorption coefficient (1/mm) of incident photons by the absorbing atom
+            nmc -- number of samples in Monte Carlo integral (dimensionless)
+            suppress_output -- set to false to prevent printing calculation results to terminal
+            detector_above_sample -- specify whether the detector is in the plane of the ring (false) or is mounted above the sample (true)
         """
         
         def define_sample_coordinates():
@@ -236,10 +255,10 @@ class experiment:
 
     def out_atten(self, x, y, z, r, phi):
         """
-        * Summary:
+        *Summary:
             Calculates the attenuation experienced by a fluoresced photon
             as it traverses the sample to the detector.
-        * Explanation:
+        *Explanation:
             Accepts a point in phase space, represented by the absorption
             site in the sample slab (x, y, z; sample coordinates) and
             the point on the detector where the fluoresced photon is absorbed
