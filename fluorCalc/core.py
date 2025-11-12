@@ -59,54 +59,70 @@ class experiment:
             self.nmc = nmc
         process_inputs()
 
-        def get_xraydb_data():
+        def normalize_composition():
+            """
+            Normalize the stoichiometric composition such that the relative
+            fractions of all elements sum to one.
+            """
+            stoichimetry_sum = sum(self.composition.values())
+            for element in self.composition:
+                self.composition[element] /= stoichimetry_sum
+        normalize_composition()
 
-            def get_photon_energies_and_quantum_yield():
-                xraydb_edge = xraydb.xray_edge(self.absorbing_element, edge)
-                self.incident_photon_energy = xraydb_edge.energy
-                xraydb_fluor_yield = xraydb.fluor_yield(element, edge, emission_line, self.incident_photon_energy)
-                total_quantum_yield, self.detected_photon_energy, measured_fraction = xraydb_fluor_yield
-                self.quantum_yield = total_quantum_yield * measured_fraction
-            get_photon_energies_and_quantum_yield()
+        def get_photon_energies_and_quantum_yield():
+            """
+            Get incident/detected photon energy based on absorbing
+            element, absorption edge, and fluorescence line. Also
+            get the quantum yield.
+            """
+            xraydb_edge = xraydb.xray_edge(self.absorbing_element, edge)
+            self.incident_photon_energy = xraydb_edge.energy
+            xraydb_fluor_yield = xraydb.fluor_yield(element, edge, emission_line, self.incident_photon_energy)
+            total_quantum_yield, self.detected_photon_energy, measured_fraction = xraydb_fluor_yield
+            self.quantum_yield = total_quantum_yield * measured_fraction
+        get_photon_energies_and_quantum_yield()
 
-            def normalize_composition():
-                stoichimetry_sum = sum(self.composition.values())
-                for element in self.composition:
-                    self.composition[element] /= stoichimetry_sum
-            normalize_composition()
-
-            def get_attenuation_coefficients():
-
-                def get_incoming_bulk_attenuation():
-                    result = 0
-                    for element, fraction in self.composition.items():
-                        result += (xraydb.mu_elam(element, self.incident_photon_energy)
-                                    * self.density * fraction
-                                    / 10) # factor of 10 converts from 1/cm to 1/mm
-                    return result    
-
-                def get_outgoing_bulk_attenuation():
-                    result = 0
-                    for element, fraction in self.composition.items():
-                        result += (xraydb.mu_elam(element, self.detected_photon_energy)
-                                    * self.density * fraction
-                                    / 10) # factor of 10 converts from 1/cm to 1/mm
-                    return result
-                
-                def get_absorbing_atom_attenuation():
-                    absorbing_element_fraction = self.composition[self.absorbing_element]
-                    result = (xraydb.mu_elam(self.absorbing_element, self.incident_photon_energy)
-                            * self.density * absorbing_element_fraction
-                            / 10)    # factor of 10 converts from 1/cm to 1/mm
-                    return result
-
-                self.mu_T_E = get_incoming_bulk_attenuation()
-                self.mu_T_Ef = get_outgoing_bulk_attenuation()
-                self.mu_i = get_absorbing_atom_attenuation()
-            get_attenuation_coefficients()
-
-        get_xraydb_data()
-
+        def get_attenuation_coefficients():
+            """
+            Calculate attenuation coefficients based on sample composition
+            and photon energies.
+            """
+            def get_incoming_bulk_attenuation():
+                """
+                Attenuation coefficient of incident photons traversing
+                the bulk sample
+                """
+                result = 0
+                for element, fraction in self.composition.items():
+                    result += (xraydb.mu_elam(element, self.incident_photon_energy)
+                                * self.density * fraction
+                                / 10) # factor of 10 converts from 1/cm to 1/mm
+                return result
+            def get_outgoing_bulk_attenuation():
+                """
+                Attenuation coefficient of fluoresced photons traversing
+                the bulk sample
+                """
+                result = 0
+                for element, fraction in self.composition.items():
+                    result += (xraydb.mu_elam(element, self.detected_photon_energy)
+                                * self.density * fraction
+                                / 10) # factor of 10 converts from 1/cm to 1/mm
+                return result
+            def get_absorbing_atom_attenuation():
+                """
+                Absorption coefficient of incident photons by the
+                absorbing element
+                """
+                absorbing_element_fraction = self.composition[self.absorbing_element]
+                result = (xraydb.mu_elam(self.absorbing_element, self.incident_photon_energy)
+                        * self.density * absorbing_element_fraction
+                        / 10)    # factor of 10 converts from 1/cm to 1/mm
+                return result
+            self.mu_T_E = get_incoming_bulk_attenuation()
+            self.mu_T_Ef = get_outgoing_bulk_attenuation()
+            self.mu_i = get_absorbing_atom_attenuation()
+        get_attenuation_coefficients()
 
         def define_sample_coordinates():
             """
