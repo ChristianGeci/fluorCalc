@@ -7,6 +7,7 @@ from dataclasses import dataclass, astuple, replace
 
 @dataclass
 class Experimental_Configuration:
+    """Specifies an experimental setup."""
     composition: dict[str, float]
     density: float
     absorbing_element: str
@@ -24,36 +25,51 @@ class Experimental_Configuration:
 
 @dataclass
 class Calculation_Result:
+    """Encapsulates the result of xafs_count_rate."""
     configuration: Experimental_Configuration
     nmc: int
     count_rate: float
     montecarlo_error: float
     crude_count_rate: float
     solid_angle_fraction: float
+    def report(self) -> None:
+        """Print result to console."""
+        print(f"Expected count rate: {self.count_rate:.3e} photons per second")
+        print(f"Using n = {self.nmc}")
+        print(f"Estimated error = {self.montecarlo_error:.2e} = {self.montecarlo_error/self.count_rate*100:.3}%")
+        #print(f"Solid angle fraction: {solid_angle/np.pi*4:.4f}") # Debug
+        print(f"Crude count rate: {self.crude_count_rate:.3e} photons per second, difference of {np.absolute(100*(self.crude_count_rate - self.count_rate)/self.count_rate):.2f}%")
 
-def xafs_count_rate(c: Experimental_Configuration,
-                nmc = 50000,
-                suppress_output = False,):
+def xafs_count_rate(c: Experimental_Configuration, nmc: int = 50000,
+        suppress_output: bool = False) -> Calculation_Result:
+    """
+    Calculate expected XAFS fluorescence count rate for a given experimental
+    configuration. Computes the count rate with both our integral scheme and
+    an approximated scheme.
+    """
     # Begin big block of helper functions (how to better organize this?)
-    def polar_to_cartesian(r, phi):
+    def polar_to_cartesian(r, phi) -> np.ndarray[float]:
         """
         Converts a vector in 2D polar coordinates into 2D Cartesian
         coordinates.
         """
         return np.array([r*np.cos(phi), r*np.sin(phi), 0])
-    def detector_coordinates_to_sample_coordinates(r, phi):
+    def detector_coordinates_to_sample_coordinates(
+            r: float, phi: float) -> np.ndarray[float]:
         """
         Accepts polar coordinates on the detector surface (r, phi)
         and converts them to detector coordinates.
         """
-        return np.matmul(M, polar_to_cartesian(r, phi))+detector_position
-    def dist(x, y, z, r, phi):
+        return np.matmul(M, polar_to_cartesian(r, phi)) + detector_position
+    def dist(x: float, y: float, z: float, 
+             r: float, phi: float) -> float:
         """
         Return the distance between a point (x, y, z) 
         in the sample and (r, phi) on the detector.
         """
         return np.linalg.norm(path(x, y, z, r, phi))
-    def out_atten(x, y, z, r, phi):
+    def out_atten(x: float, y: float, z: float, 
+                  r: float, phi: float) -> float:
         """
         *Summary:
             Calculates the attenuation experienced by a fluoresced photon
@@ -67,14 +83,15 @@ def xafs_count_rate(c: Experimental_Configuration,
         distance_thru_sample = (y * dist(x, y, z, r, phi)
                                 / (detector_coordinates_to_sample_coordinates(r, phi)[1]-y))
         return np.exp(distance_thru_sample*mu_T_Ef)
-    def in_atten(y):
+    def in_atten(y: float) -> float:
         """
         Calculate attenuation experienced by a photon absorbed at
         a given point in phase space (depends only upon depth
         into the sample, measured in the sample coordinate system).
         """
         return np.exp(y/np.sin(theta)*mu_T_E)
-    def path(x, y, z, r, phi):
+    def path(x: float, y: float, z: float, 
+             r: float, phi: float) -> np.ndarray[float]:
         """
         Returns a vector in sample coordinates that points from a given 
         point in the bulk sample (x, y, z) to a given point on the 
@@ -83,7 +100,8 @@ def xafs_count_rate(c: Experimental_Configuration,
         sample_point = np.array([x, y, z])
         detector_point = detector_coordinates_to_sample_coordinates(r, phi)
         return detector_point - sample_point
-    def cosine_term(x, y, z, r, phi):
+    def cosine_term(x: float, y: float, z: 
+                    float, r: float, phi: float) -> float:
         """
         Return the diminution in flux that occurs to off-normal
         incidence.
@@ -94,7 +112,8 @@ def xafs_count_rate(c: Experimental_Configuration,
 
     theta = c.theta / 180 * np.pi
     
-    def normalize_composition(composition) -> list[str, float]:
+    def normalize_composition(
+            composition: list[str, float]) -> list[str, float]:
         """
         Normalize the stoichiometric composition such that the relative
         fractions of all elements sum to one.
@@ -106,7 +125,8 @@ def xafs_count_rate(c: Experimental_Configuration,
         return normalized_composition
     normalized_composition = normalize_composition(c.composition)
 
-    def get_photon_energies_and_quantum_yield(absorbing_element, edge, emission_line):
+    def get_photon_energies_and_quantum_yield(
+            absorbing_element: str, edge: str, emission_line: str) -> tuple[float]:
         """
         Get incident/detected photon energy based on absorbing
         element, absorption edge, and fluorescence line. Also
@@ -124,12 +144,13 @@ def xafs_count_rate(c: Experimental_Configuration,
         quantum_yield
     ) = get_photon_energies_and_quantum_yield(c.absorbing_element, c.edge, c.emission_line)
     
-    def get_attenuation_coefficients(composition, density, absorbing_element):
+    def get_attenuation_coefficients(
+            composition: dict[str, float], density: float, absorbing_element: str) -> tuple[float]:
         """
         Calculate attenuation coefficients based on sample composition
         and photon energies.
         """
-        def get_bulk_attenuation(photon_energy) -> float:
+        def get_bulk_attenuation(photon_energy: float) -> float:
             """
             Attenuation coefficient of photons traversing
             the bulk sample as a function of their energy
@@ -156,7 +177,7 @@ def xafs_count_rate(c: Experimental_Configuration,
         return (mu_T_E, mu_T_Ef, mu_i)
     (mu_T_E, mu_T_Ef, mu_i) = get_attenuation_coefficients(c.composition, c.density, c.absorbing_element)
 
-    def define_sample_coordinates():
+    def define_sample_coordinates() -> tuple[np.ndarry[float]]:
         """
         *Summary:
             Define the unit vectors x_s, y_s, and z_s, which form
@@ -173,7 +194,8 @@ def xafs_count_rate(c: Experimental_Configuration,
         return (x_s, y_s, z_s)
     (x_s, y_s, z_s) = define_sample_coordinates()
 
-    def calculate_illuminated_area(detector_above_sample, beam_height, beam_width, photon_flow):
+    def calculate_illuminated_area(detector_above_sample: bool, 
+            beam_height: float, beam_width: float, photon_flow: float) -> tuple[float]:
         """
         *Summary:
             Find the dimensions (in mm) of the sample illuminated by the beam.
@@ -201,7 +223,7 @@ def xafs_count_rate(c: Experimental_Configuration,
         z_illum
     ) = calculate_illuminated_area(c.detector_above_sample, c.beam_height, c.beam_width, c.photon_flow)
 
-    def lump_constants():
+    def lump_constants() -> float:
         """
         Lump together a bunch of constants that will just end
         up coming out in front of the integral.
@@ -214,7 +236,8 @@ def xafs_count_rate(c: Experimental_Configuration,
         return consts
     consts = lump_constants()
 
-    def calculate_detector_position(detector_distance, R):
+    def calculate_detector_position(
+            detector_distance:float, R: float) -> np.ndarray[float]:
         """
         Get the position of the detector <x, y, z> in the
         sample coordinate scheme.
@@ -228,7 +251,7 @@ def xafs_count_rate(c: Experimental_Configuration,
         return detector_position
     detector_position = calculate_detector_position(c.detector_distance, c.R)
 
-    def calculate_detector_orientation():
+    def calculate_detector_orientation() -> tuple[float]:
         """
         Get alpha and beta, angles which specify the orientation of 
         a unit vector normal to the detector surface in a polar
@@ -241,7 +264,7 @@ def xafs_count_rate(c: Experimental_Configuration,
         return (alpha, beta)
     (alpha, beta) = calculate_detector_orientation()
 
-    def define_detector_coordinate_system():
+    def define_detector_coordinate_system() -> tuple[np.ndarray]:
         """Define a new orthonormal set of basis vectors
         x_d, y_d, z_d, where z_d is taken as the direction
         normal to the detector surface. These specify
@@ -256,7 +279,7 @@ def xafs_count_rate(c: Experimental_Configuration,
         return (x_d, y_d, z_d)
     (x_d, y_d, z_d) = define_detector_coordinate_system()
 
-    def calculate_transformation_matrices():
+    def calculate_transformation_matrices() -> tuple[np.ndarray]:
         """
         Calculate a matrix M that converts from detector coorinates
         to sample coordinates and a matrix W that converts from
@@ -267,7 +290,7 @@ def xafs_count_rate(c: Experimental_Configuration,
         return (M, W)
     (M, W) = calculate_transformation_matrices()
 
-    def find_y_depth_limit():
+    def find_y_depth_limit() -> float:
         """
         Calculate how deeply into the sample slab we will integrate
         by finding at what point the beam intensity has dropped below
@@ -282,7 +305,7 @@ def xafs_count_rate(c: Experimental_Configuration,
         return y_depth_limit
     y_depth_limit = find_y_depth_limit()
 
-    def compute_full_integral_count_rate(R):
+    def compute_full_integral_count_rate(R: float) -> tuple[float]:
         """
         Compute the fluorescence count rate within our integral
         formalism.
@@ -317,7 +340,8 @@ def xafs_count_rate(c: Experimental_Configuration,
         return (count_rate, montecarlo_error)
     (count_rate, montecarlo_error) = compute_full_integral_count_rate(c.R)
 
-    def compute_simple_count_rate(R, detector_distance, photon_flow):
+    def compute_simple_count_rate(R: float, detector_distance: float,
+            photon_flow: float) -> tuple[float]:
         """
         Compute the count rate according to the approximate description
         given in Bunker.
@@ -334,16 +358,8 @@ def xafs_count_rate(c: Experimental_Configuration,
         solid_angle
     ) = compute_simple_count_rate(c.R, c.detector_distance, c.photon_flow)
 
-    def print_output():
-        print(f"expected count rate: {count_rate:.3e} photons per second")
-        print("Using n = ", nmc)
-        print(f"estimated error = {montecarlo_error:.2e} = {montecarlo_error/count_rate*100:.3}%")
-        print(f"solid angle fraction: {solid_angle/np.pi*4:.4f}")
-        print(f"crude count rate: {crude_result:.3e} photons per second, difference of {np.absolute(100*(crude_result - count_rate)/count_rate):.2f}%")
-    if not suppress_output:
-        print_output()
-
     def package_result() -> Calculation_Result:
+        """Package count rate calculation result into an object."""
         result = Calculation_Result(
             c,
             nmc,
@@ -355,12 +371,21 @@ def xafs_count_rate(c: Experimental_Configuration,
         return result
     result = package_result()
 
+    if not suppress_output:
+        result.report()
+
     return result
 
 class angle_sweep:
-    def __init__(self, min_angle, max_angle, step_size, template_experiment, nmc = 100):
+    """
+    Encapsulates a series of experiments over which the angle of incidence
+    is varied and fluorescence count rates are calculated.
+    """
+    def __init__(self, min_angle: float, max_angle: float, step_size: 
+            float, template_experiment: Experimental_Configuration, nmc: int = 100):
 
-        def generate_configurations():
+        def generate_configurations() -> list[Experimental_Configuration]:
+            """Create experimental configuration objects."""
             angles = np.arange(min_angle, max_angle, step_size)
             configurations = []
             for angle in angles:
@@ -369,7 +394,8 @@ class angle_sweep:
             return configurations
         configurations = generate_configurations()
 
-        def calculate_results():
+        def calculate_results() -> list[Calculation_Result]:
+            """Get count rates for all experimental configurations."""
             results = []
             for configuration in configurations:
                 results.append(xafs_count_rate(
@@ -378,25 +404,33 @@ class angle_sweep:
         self.results = calculate_results()
     
     @property
-    def count_rates(self):
+    def count_rates(self) -> np.ndarray[float]:
+        """Array of all integrated count rates"""
         return np.array([result.count_rate for result in self.results])
     @property
-    def crude_count_rates(self):
+    def crude_count_rates(self) -> np.ndarray[float]:
+        """Array of all crude count rates"""
         return np.array([result.crude_count_rate for result in self.results])
     @property
-    def angles(self):
+    def angles(self) -> np.ndarray[float]:
+        """Array of all angles"""
         return np.array([result.configuration.theta for result in self.results])
     @property
-    def max_count_rate(self):
+    def max_count_rate(self) -> float:
+        """Highest predicted count rate"""
         return np.max(self.count_rates)
     @property
-    def optimal_angle(self):
+    def optimal_angle(self) -> float:
+        """Angle of incidence of experiment with highest predicted count rate"""
         max_index = np.argmax(self.count_rates)
         return self.angles[max_index]
 
-    def plot_result(self, **kwargs):
+    def plot_result(self, **kwargs) -> None:
+        """Plot integrated count rate as a function of incident angle."""
         plt.plot(self.angles, self.count_rates, **kwargs)
-    def plot_crude_result(self, **kwargs):
+    def plot_crude_result(self, **kwargs) -> None:
+        """Plot crude count rate as a function of incident angle."""
         plt.plot(self.angles, self.crude_count_rates, **kwargs)
-    def report_optimal_angle(self):
+    def report_optimal_angle(self) -> None:
+        """Read out optimal angle and max count rate."""
         print(f"Maximum flux of {self.max_count_rate:.3e} at angle {self.optimal_angle}")
