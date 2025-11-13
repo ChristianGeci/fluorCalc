@@ -6,23 +6,28 @@ import xraydb
 from dataclasses import dataclass
 
 @dataclass
-class experimental_configuration:
+class Experimental_Configuration:
     composition: dict[str, float]
     density: float
-    element: str
+    absorbing_element: str
     edge: str
     emission_line: str
     theta: float
     R: float
     beam_width: float
+    beam_height: float
     photon_flow: float
     detector_distance: float
     detector_above_sample: bool
 
 @dataclass
-class calculation_result:
-    configuration: experimental_configuration
+class Calculation_Result:
+    configuration: Experimental_Configuration
     nmc: int
+    count_rate: float
+    montecarlo_error: float
+    crude_count_rate: float
+    solid_angle_fraction: float
 
 
 class experiment:
@@ -31,16 +36,10 @@ class experiment:
     and expected fluorescence count rate for that configuration.
     """
     def __init__(self,
-                composition: dict[str, float], density: float, 
-                element: str, edge: str, emission_line: str,
-                theta = 45,
-                R = np.sqrt(170/4/np.pi),
-                beam_width = 3, beam_height = 1,
-                photon_flow = 7.7E9,
-                detector_distance = 10,
+                configuration: Experimental_Configuration,
                 nmc = 50000,
                 suppress_output = False,
-                detector_above_sample = False):
+                ):
         """
         *Summary:
             Parses inputs related to experimental configuration and
@@ -63,20 +62,21 @@ class experiment:
         
         def process_inputs():
             """Write constructor arguments to object."""
-            self.composition = composition
-            self.density = density
-            self.absorbing_element = element
-            self.edge = edge
-            self.emission_line = emission_line
+            self.configuration = configuration
+            self.composition = configuration.composition
+            self.density = configuration.density
+            self.absorbing_element = configuration.absorbing_element
+            self.edge = configuration.edge
+            self.emission_line = configuration.emission_line
             self.suppress_output = suppress_output
-            self.theta = theta*np.pi/180
-            self.R = R
+            self.theta = configuration.theta*np.pi/180
+            self.R = configuration.R
             self.d = 2*self.R
-            self.detector_distance = detector_distance
-            self.beam_width = beam_width
-            self.beam_height = beam_height
-            self.detector_above_sample = detector_above_sample
-            self.photon_flow = photon_flow
+            self.detector_distance = configuration.detector_distance
+            self.beam_width = configuration.beam_width
+            self.beam_height = configuration.beam_height
+            self.detector_above_sample = configuration.detector_above_sample
+            self.photon_flow = configuration.photon_flow
             self.nmc = nmc
         process_inputs()
 
@@ -96,9 +96,9 @@ class experiment:
             element, absorption edge, and fluorescence line. Also
             get the quantum yield.
             """
-            xraydb_edge = xraydb.xray_edge(self.absorbing_element, edge)
+            xraydb_edge = xraydb.xray_edge(self.absorbing_element, self.edge)
             self.incident_photon_energy = xraydb_edge.energy
-            xraydb_fluor_yield = xraydb.fluor_yield(element, edge, emission_line, self.incident_photon_energy)
+            xraydb_fluor_yield = xraydb.fluor_yield(self.absorbing_element, self.edge, self.emission_line, self.incident_photon_energy)
             total_quantum_yield, self.detected_photon_energy, measured_fraction = xraydb_fluor_yield
             self.quantum_yield = total_quantum_yield * measured_fraction
         get_photon_energies_and_quantum_yield()
@@ -164,12 +164,12 @@ class experiment:
                 (z_illum) is determined by the height of the beam. Otherwise,
                 z_illum is determined by the width of the beam.
             """
-            if (not detector_above_sample):
-                self.z_illum = beam_height
-                self.x_illum = beam_width/np.sin(self.theta)
+            if (not self.detector_above_sample):
+                self.z_illum = self.beam_height
+                self.x_illum = self.beam_width/np.sin(self.theta)
             else:
-                self.z_illum = beam_width
-                self.x_illum = beam_height/np.sin(self.theta)
+                self.z_illum = self.beam_width
+                self.x_illum = self.beam_height/np.sin(self.theta)
             self.photon_flux = self.photon_flow/self.z_illum/self.x_illum
         calculate_illuminated_area()
 
@@ -190,8 +190,8 @@ class experiment:
             Get the position of the detector <x, y, z> in the
             sample coordinate scheme.
             """
-            x = np.sin(self.theta)*detector_distance+self.x_illum/2
-            y = np.cos(self.theta)*detector_distance
+            x = np.sin(self.theta)*self.detector_distance+self.x_illum/2
+            y = np.cos(self.theta)*self.detector_distance
             z = self.z_illum/2
             self.detector_position = np.array([x, y, z])
 
@@ -304,6 +304,18 @@ class experiment:
             print(f"crude count rate: {self.crude_result:.3e} photons per second, difference of {np.absolute(100*(self.crude_result - self.result)/self.result):.2f}%")
         if not self.suppress_output:
             print_output()
+        
+        def store_result() -> Calculation_Result:
+            result = Calculation_Result(
+                configuration,
+                nmc,
+                self.result,
+                self.error,
+                self.crude_result,
+                self.solid_angle
+            )
+            return result
+        print(store_result())
 
     def polar_to_cartesian(self, r, phi):
         """
@@ -416,3 +428,23 @@ class angle_sweep:
             print(f"maximum flux of {max_flux:.3e} at angle {max_angle}")
 
         return max_angle, max_flux
+
+def test_function():
+    test_config = Experimental_Configuration(
+        {'Mo': 1,
+         'O' : 2,
+         'P' : 0.001},
+         3,
+         'P', 'K', 'Ka',
+         45,
+         np.sqrt(170/4/np.pi),
+         3, 1,
+         7.7E9,
+         10,
+         False)
+    
+    test_experiment = experiment(test_config, nmc = 1000)
+    
+    
+test_function()
+print("reached end of program")
