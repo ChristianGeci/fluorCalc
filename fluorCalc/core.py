@@ -3,7 +3,9 @@ import matplotlib.pyplot as plt
 import mcint
 import random
 import xraydb
-from dataclasses import dataclass, astuple, replace
+from dataclasses import dataclass, asdict, replace
+import json
+import os
 
 @dataclass
 class Experimental_Configuration:
@@ -20,8 +22,6 @@ class Experimental_Configuration:
     photon_flow: float
     detector_distance: float
     detector_above_sample: bool
-    def __iter__(self):
-        return iter(astuple(self))
 
 @dataclass
 class Calculation_Result:
@@ -39,6 +39,28 @@ class Calculation_Result:
         print(f"Estimated error = {self.montecarlo_error:.2e} = {self.montecarlo_error/self.count_rate*100:.3}%")
         #print(f"Solid angle fraction: {solid_angle/np.pi*4:.4f}") # Debug
         print(f"Crude count rate: {self.crude_count_rate:.3e} photons per second, difference of {np.absolute(100*(self.crude_count_rate - self.count_rate)/self.count_rate):.2f}%")
+    def save(self, filepath: str) -> None:
+        """Saves result as a JSON file."""
+        def unique_filename_check() -> str:
+            """
+            Find an appendix for the filename such that no 
+            clobbering occurs.
+            """
+            i = ""
+            if os.path.exists(f"{filepath}{i}.json"):
+                i = 0
+                while os.path.exists(f"{filepath}{i}.json"):
+                    i += 1
+            return str(i)
+        i = unique_filename_check()
+
+        with open(f"{filepath}{i}.json", 'w') as f:
+            json.dump(asdict(self), f, indent = 4)
+def load_result(filepath) -> Calculation_Result:
+    """Load a calculation result from a JSON file."""
+    with open(f"{filepath}.json") as f:
+        dict_data = json.load(f)
+        return Calculation_Result(**dict_data)
 
 def xafs_count_rate(c: Experimental_Configuration, nmc: int = 50000,
         suppress_output: bool = False) -> Calculation_Result:
@@ -175,9 +197,9 @@ def xafs_count_rate(c: Experimental_Configuration, nmc: int = 50000,
         mu_T_Ef = get_bulk_attenuation(detected_photon_energy)
         mu_i = get_absorbing_atom_attenuation(incident_photon_energy)
         return (mu_T_E, mu_T_Ef, mu_i)
-    (mu_T_E, mu_T_Ef, mu_i) = get_attenuation_coefficients(c.composition, c.density, c.absorbing_element)
+    (mu_T_E, mu_T_Ef, mu_i) = get_attenuation_coefficients(normalized_composition, c.density, c.absorbing_element)
 
-    def define_sample_coordinates() -> tuple[np.ndarry[float]]:
+    def define_sample_coordinates() -> tuple[np.ndarray[float]]:
         """
         *Summary:
             Define the unit vectors x_s, y_s, and z_s, which form
