@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import mcint
 import random
 import xraydb
-from dataclasses import dataclass, astuple
+from dataclasses import dataclass, astuple, replace
 
 @dataclass
 class Experimental_Configuration:
@@ -358,71 +358,45 @@ def xafs_count_rate(c: Experimental_Configuration,
     return result
 
 class angle_sweep:
-    def __init__(self, min_angle, max_angle, step_size, template_experiment, nmc = 0):
-        self.angles = np.arange(min_angle, max_angle, step_size)
-        self.experiments = []
+    def __init__(self, min_angle, max_angle, step_size, template_experiment, nmc = 100):
 
-        Nmc = nmc if nmc != 0 else template_experiment.nmc
+        def generate_configurations():
+            angles = np.arange(min_angle, max_angle, step_size)
+            configurations = []
+            for angle in angles:
+                configuration = replace(template_experiment, theta = angle)
+                configurations.append(configuration)
+            return configurations
+        configurations = generate_configurations()
 
-        for angle in self.angles:
-            self.experiments.append(experiment(
-                template_experiment.composition, template_experiment.density, 
-                template_experiment.absorbing_element, template_experiment.edge, template_experiment.emission_line,
-                R = template_experiment.R,
-                beam_width = template_experiment.beam_width, beam_height = template_experiment.beam_height,
-                photon_flow = template_experiment.photon_flow,
-                detector_distance = template_experiment.detector_distance,
-                detector_above_sample = template_experiment.detector_above_sample,
-
-                nmc = Nmc,
-                suppress_output = True,
-                theta = angle))
-
-    def plot_result(self, plot_simple_calculation_result = True, label = "", title = ""):
-        yvals = [entry.result for entry in self.experiments]
-        yvals = np.array(yvals)
-
-        crude_yvals = [entry.crude_result for entry in self.experiments]
-        crude_yvals = np.array(crude_yvals)
-
-        plt.plot(self.angles, yvals, label = label + " integrated calculation")
-        if plot_simple_calculation_result:
-            plt.plot(self.angles, crude_yvals, label = label + " simple calculation", linestyle='dashed')
-        plt.xlabel("angle (°)")
-        plt.ylabel("count rate (photons/s)")
-        plt.title(title)
-
-        plt.legend()
-
-    def get_optimal_angle(self, suppress_output = False):
-        max_angle = 0
-        max_flux = 0
-        for angle, Experiment in zip(self.angles, self.experiments):
-            if Experiment.result > max_flux:
-                max_flux = Experiment.result
-                max_angle = angle
-
-        if not suppress_output:
-            print(f"maximum flux of {max_flux:.3e} at angle {max_angle}")
-
-        return max_angle, max_flux
-
-def test_function():
-    test_config = Experimental_Configuration(
-        {'Mo': 1,
-         'O' : 2,
-         'P' : 0.001},
-         3,
-         'P', 'K', 'Ka',
-         45,
-         np.sqrt(170/4/np.pi),
-         3, 1,
-         7.7E9,
-         10,
-         False)
-
-    result = xafs_count_rate(test_config, nmc = 1000)
-
+        def calculate_results():
+            results = []
+            for configuration in configurations:
+                results.append(xafs_count_rate(
+                    configuration, nmc = nmc, suppress_output=True))
+            return results
+        self.results = calculate_results()
     
-test_function()
-print("reached end of program")
+    @property
+    def count_rates(self):
+        return np.array([result.count_rate for result in self.results])
+    @property
+    def crude_count_rates(self):
+        return np.array([result.crude_count_rate for result in self.results])
+    @property
+    def angles(self):
+        return np.array([result.configuration.theta for result in self.results])
+    @property
+    def max_count_rate(self):
+        return np.max(self.count_rates)
+    @property
+    def optimal_angle(self):
+        max_index = np.argmax(self.count_rates)
+        return self.angles[max_index]
+
+    def plot_result(self, **kwargs):
+        plt.plot(self.angles, self.count_rates, **kwargs)
+    def plot_crude_result(self, **kwargs):
+        plt.plot(self.angles, self.crude_count_rates, **kwargs)
+    def report_optimal_angle(self):
+        print(f"Maximum flux of {self.max_count_rate:.3e} at angle {self.optimal_angle}")
