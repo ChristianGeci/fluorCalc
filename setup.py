@@ -11,8 +11,12 @@ setup(
     packages=['fluorCalc'],
     install_requires=['mcint',
                       'numpy',
-                      'scipy',
                       'matplotlib',
+                      'random',
+                      'xraydb',
+                      'dataclasses',
+                      'json',
+                      'os'
                       ],
 
     classifiers=[
