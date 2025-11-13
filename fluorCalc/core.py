@@ -3,6 +3,27 @@ import matplotlib.pyplot as plt
 import mcint
 import random
 import xraydb
+from dataclasses import dataclass
+
+@dataclass
+class experimental_configuration:
+    composition: dict[str, float]
+    density: float
+    element: str
+    edge: str
+    emission_line: str
+    theta: float
+    R: float
+    beam_width: float
+    photon_flow: float
+    detector_distance: float
+    detector_above_sample: bool
+
+@dataclass
+class calculation_result:
+    configuration: experimental_configuration
+    nmc: int
+
 
 class experiment:
     """
@@ -87,10 +108,10 @@ class experiment:
             Calculate attenuation coefficients based on sample composition
             and photon energies.
             """
-            def get_incoming_bulk_attenuation():
+            def get_bulk_attenuation(photon_energy) -> float:
                 """
-                Attenuation coefficient of incident photons traversing
-                the bulk sample
+                Attenuation coefficient of photons traversing
+                the bulk sample as a function of their energy
                 """
                 result = 0
                 for element, fraction in self.composition.items():
@@ -98,30 +119,19 @@ class experiment:
                                 * self.density * fraction
                                 / 10) # factor of 10 converts from 1/cm to 1/mm
                 return result
-            def get_outgoing_bulk_attenuation():
+            def get_absorbing_atom_attenuation(photon_energy: float) -> float:
                 """
-                Attenuation coefficient of fluoresced photons traversing
-                the bulk sample
-                """
-                result = 0
-                for element, fraction in self.composition.items():
-                    result += (xraydb.mu_elam(element, self.detected_photon_energy)
-                                * self.density * fraction
-                                / 10) # factor of 10 converts from 1/cm to 1/mm
-                return result
-            def get_absorbing_atom_attenuation():
-                """
-                Absorption coefficient of incident photons by the
-                absorbing element
+                Absorption coefficient of photons by the
+                absorbing element as a function of their energy
                 """
                 absorbing_element_fraction = self.composition[self.absorbing_element]
-                result = (xraydb.mu_elam(self.absorbing_element, self.incident_photon_energy)
+                result = (xraydb.mu_elam(self.absorbing_element, photon_energy)
                         * self.density * absorbing_element_fraction
                         / 10)    # factor of 10 converts from 1/cm to 1/mm
                 return result
-            self.mu_T_E = get_incoming_bulk_attenuation()
-            self.mu_T_Ef = get_outgoing_bulk_attenuation()
-            self.mu_i = get_absorbing_atom_attenuation()
+            self.mu_T_E = get_bulk_attenuation(self.incident_photon_energy)
+            self.mu_T_Ef = get_bulk_attenuation(self.detected_photon_energy)
+            self.mu_i = get_absorbing_atom_attenuation(self.incident_photon_energy)
         get_attenuation_coefficients()
 
         def define_sample_coordinates():
