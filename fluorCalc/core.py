@@ -404,7 +404,7 @@ class angle_sweep:
     is varied and fluorescence count rates are calculated.
     """
     def __init__(self, min_angle: float, max_angle: float,step_size: float,
-                 template_experiment: Experimental_Configuration, nmc: int = 50000):
+            template_experiment: Experimental_Configuration, nmc: int = 50000):
 
         def generate_configurations() -> list[Experimental_Configuration]:
             """Create experimental configuration objects."""

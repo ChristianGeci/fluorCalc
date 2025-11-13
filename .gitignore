@@ -1,3 +1,8 @@
 *.docx#
 .ipynb_checkpoints/
 *.json
+build/
+fluorCalc.egg-info/
+dist/
+stand-alone user guide.docx
+notebooks/.ipynb_checkpoints/user_notebook-checkpoint.ipynb
