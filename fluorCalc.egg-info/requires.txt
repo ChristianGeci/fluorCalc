@@ -1,4 +1,0 @@
-mcint
-numpy
-scipy
-matplotlib
