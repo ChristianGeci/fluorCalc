@@ -21,7 +21,7 @@ class Experimental_Configuration:
     beam_height: float
     photon_flow: float
     detector_distance: float
-    detector_above_sample: bool
+    detector_above_sample: bool = False
 
 @dataclass
 class Calculation_Result:
@@ -35,7 +35,7 @@ class Calculation_Result:
     def report(self) -> None:
         """Print result to console."""
         print(f"Expected count rate: {self.count_rate:.3e} photons per second")
-        print(f"Using n = {self.nmc}")
+        print(f"Using nmc = {self.nmc}")
         print(f"Estimated error = {self.montecarlo_error:.2e} = {self.montecarlo_error/self.count_rate*100:.3}%")
         #print(f"Solid angle fraction: {solid_angle/np.pi*4:.4f}") # Debug
         print(f"Crude count rate: {self.crude_count_rate:.3e} photons per second, difference of {np.absolute(100*(self.crude_count_rate - self.count_rate)/self.count_rate):.2f}%")
@@ -403,8 +403,8 @@ class angle_sweep:
     Encapsulates a series of experiments over which the angle of incidence
     is varied and fluorescence count rates are calculated.
     """
-    def __init__(self, min_angle: float, max_angle: float, step_size: 
-            float, template_experiment: Experimental_Configuration, nmc: int = 100):
+    def __init__(self, min_angle: float, max_angle: float,step_size: float,
+                 template_experiment: Experimental_Configuration, nmc: int = 50000):
 
         def generate_configurations() -> list[Experimental_Configuration]:
             """Create experimental configuration objects."""
@@ -455,4 +455,4 @@ class angle_sweep:
         plt.plot(self.angles, self.crude_count_rates, **kwargs)
     def report_optimal_angle(self) -> None:
         """Read out optimal angle and max count rate."""
-        print(f"Maximum flux of {self.max_count_rate:.3e} at angle {self.optimal_angle}")
+        print(f"Maximum flux of {self.max_count_rate:.3e} at a {self.optimal_angle}° angle of incidence")
