@@ -1,5 +1,5 @@
 # fluorCalc
-Calculate Expected Count Rate in Fluorescence XAFS.
+Python module to calculate expected count rate in Fluorescence XAFS.
 
 
 
